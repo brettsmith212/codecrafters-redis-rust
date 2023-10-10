@@ -7,7 +7,6 @@ fn main() {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                println!("accepted new connection");
                 let mut buf = [0; 512];
                 loop {
                     stream.read(&mut buf).unwrap();
