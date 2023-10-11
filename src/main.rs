@@ -18,7 +18,7 @@ async fn main() {
                     if read_count == 0 {
                       break;
                     }
-                    stream.write(b"+PING\r\n").await.unwrap();
+                    stream.write(b"+PONG\r\n").await.unwrap();
                   }
                 });
             }
