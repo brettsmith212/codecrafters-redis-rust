@@ -1,5 +1,8 @@
-use tokio::net::TcpListener;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+mod resp;
+
+use tokio::net::{TcpListener, TcpStream};
+use anyhow::Result;
+use resp::Value;
 
 #[tokio::main]
 async fn main() {
@@ -9,17 +12,10 @@ async fn main() {
     loop {
         let stream = listener.accept().await;
         match stream {
-            Ok((mut stream, _)) => {
+            Ok((stream, _)) => {
                 println!("accepted new connection");
                 tokio::spawn(async move {
-                  let mut buf = [0; 512];
-                  loop {
-                    let read_count = stream.read(&mut buf).await.unwrap();
-                    if read_count == 0 {
-                      break;
-                    }
-                    stream.write(b"+PONG\r\n").await.unwrap();
-                  }
+                    handle_conn(stream).await;
                 });
             }
             Err(e) => {
@@ -27,4 +23,47 @@ async fn main() {
             }
         }
     }
+}
+
+async fn handle_conn(stream: TcpStream) {
+    let mut handler = resp::RespHandler::new(stream);
+    println!("starting read loop");
+    loop {
+        let value = handler.read_value().await.unwrap();
+        println!("got value: {:?}", value);
+
+        let response = if let Some(v) = value {
+          let (command, args) = extract_command(v).unwrap();
+          match command.as_str() {
+            "ping" => Value::SimpleString("PONG".to_string()),
+            "echo" => args.first().unwrap().clone(),
+            c => panic!("Cannot handle command {}", c)
+          }
+        } else {
+          break;
+        };
+
+        println!("sending response: {:?}", response);
+      
+        handler.write_value(response).await.unwrap();
+    }
+}
+
+fn extract_command(value: Value) -> Result<(String,Vec<Value>)> {
+  match value {
+    Value::Array(a) => {
+      Ok((
+        unpack_bulk_str(a.first().unwrap().clone())?,
+        a.into_iter().skip(1).collect(),
+      ))
+    },
+    _ => Err(anyhow::anyhow!("Invalid command format")),
+  }
+}
+
+fn unpack_bulk_str(value: Value) -> Result<String> {
+  match value {
+    Value::BulkString(s) => Ok(s),
+    _ => Err(anyhow::anyhow!("Invalid bulk string format")),
+  }
 }
