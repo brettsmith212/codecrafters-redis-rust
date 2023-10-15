@@ -2,6 +2,8 @@ mod internal_state;
 mod resp;
 
 use anyhow::Result;
+use std::time::{Duration, SystemTime};
+use internal_state::{RedisStoredValue, RedisInternalState};
 use resp::Value;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -29,10 +31,8 @@ async fn main() {
 async fn handle_conn(stream: TcpStream) {
     let mut handler = resp::RespHandler::new(stream);
     let mut internal_state = internal_state::RedisInternalState::new();
-    println!("starting read loop");
     loop {
         let value = handler.read_value().await.unwrap();
-        println!("got value: {:?}", value);
 
         let response = if let Some(v) = value {
             let (command, args) = extract_command(v).unwrap();
@@ -40,49 +40,69 @@ async fn handle_conn(stream: TcpStream) {
                 "ping" | "PING" => Value::SimpleString("PONG".to_string()),
                 "echo" | "ECHO" => args.first().unwrap().clone(),
                 "get" | "GET" => {
-                    let key = extract_string(args.first().unwrap().clone()).unwrap();
-                    let default_value = String::from("Invalid Key");
-                    let value = internal_state.get(&key).unwrap_or(&default_value);
-                    Value::SimpleString(value.to_string())
+                    println!("redis state: {:?}", internal_state);
+                    let key = unpack_bulk_str(args.first().unwrap()).unwrap();
+                    let v = format!("Data not available for key: {}", key);
+                    let default_value = RedisStoredValue::new(v, None);
+                    let stored_value = internal_state.get(&key).unwrap_or(&default_value);
+                    Value::SimpleString(stored_value.value().to_string())
                 }
                 "set" | "SET" => {
-                  let key = extract_string(args.first().unwrap().clone()).unwrap();
-                  let value = extract_string(args.last().unwrap().clone()).unwrap();
-                  let result = internal_state.set(&key, &value);
-                  Value::SimpleString(result.unwrap().to_string())
-                }
+                  let output = handle_set(&args, &mut internal_state);
+                  match output {
+                    Ok(o) => Value::SimpleString(o.to_string()),
+                    Err(e) => Value::SimpleString(e.to_string())
+                  }
+                } 
                 c => panic!("Cannot handle command {}", c),
             }
         } else {
             break;
         };
 
-        println!("sending response: {:?}", response);
-
         handler.write_value(response).await.unwrap();
     }
 }
 
-fn extract_string(value: Value) -> Result<String> {
-    match value {
-        Value::BulkString(a) => Ok(a),
-        _ => Err(anyhow::anyhow!("Invalid format {:?}", value)),
+fn handle_set(args: &Vec<Value>, internal_state: &mut RedisInternalState) -> Result<String> {
+  let key = unpack_bulk_str(&args[0]).unwrap();
+  let value = unpack_bulk_str(&args[1]).unwrap();
+
+  let expiration_time_str = match args.get(2) {
+    Some(s) => {
+      let exp = unpack_bulk_str(s)?.to_uppercase();
+      Some(exp)
+    },
+    None => None,
+  };
+
+  let expiration = match expiration_time_str {
+    Some(s) if s == "PX" => {
+      let time: u64 = unpack_bulk_str(&args[3])?.parse()?;
+      let expiration_time = SystemTime::now() + Duration::from_millis(time);
+      Some(expiration_time)
     }
+    Some(_) => None,
+    None => None
+  };
+
+  let rsv = RedisStoredValue::new(value, expiration);
+  return internal_state.set(&key, &rsv);
 }
 
 fn extract_command(value: Value) -> Result<(String, Vec<Value>)> {
     match value {
         Value::Array(a) => Ok((
-            unpack_bulk_str(a.first().unwrap().clone())?,
+            unpack_bulk_str(a.first().unwrap())?,
             a.into_iter().skip(1).collect(),
         )),
         _ => Err(anyhow::anyhow!("Invalid command format")),
     }
 }
 
-fn unpack_bulk_str(value: Value) -> Result<String> {
+fn unpack_bulk_str(value: &Value) -> Result<String> {
     match value {
-        Value::BulkString(s) => Ok(s),
+        Value::BulkString(s) => Ok(s.to_string()),
         _ => Err(anyhow::anyhow!("Invalid bulk string format")),
     }
 }
