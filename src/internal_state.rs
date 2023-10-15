@@ -18,7 +18,7 @@ impl RedisInternalState {
 
   pub fn set(&mut self, key: &str, value: &str) -> Result<String, anyhow::Error> {
     self.key_value_store.insert(key.to_string(), value.to_string());
-    Ok(String::from("SUCCESS"))
+    Ok(String::from("OK"))
   }
 }
   
