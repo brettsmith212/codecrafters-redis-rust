@@ -1,4 +1,5 @@
 use std::{collections::HashMap, time::SystemTime};
+use crate::resp::Value;
 
 #[derive(Debug, Clone)]
 pub struct RedisStoredValue {
@@ -35,16 +36,15 @@ impl RedisInternalState {
         }
     }
 
-    pub fn get(&self, key: &str) -> Option<&RedisStoredValue> {
+    pub fn get(&self, key: &str) -> Option<Value> {
         if let Some(stored_value) = self.key_value_store.get(key) {
             if let Some(expiration) = stored_value.expiration() {
-                println!("expiration: {:?}", expiration);
-                println!("current time: {:?}", SystemTime::now());
                 if expiration < &SystemTime::now() {
                     return None;
                 }
             }
-            return Some(stored_value);
+            let value = Value::SimpleString(stored_value.value().to_string());
+            return Some(value);
         }
 
         return None;

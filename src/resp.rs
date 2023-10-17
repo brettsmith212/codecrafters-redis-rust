@@ -8,6 +8,7 @@ pub enum Value {
   SimpleString(String),
   BulkString(String),
   Array(Vec<Value>),
+  Null,
 }
 
 impl Value {
@@ -15,6 +16,7 @@ impl Value {
      match &self {
        Value::SimpleString(s) => format!("+{}\r\n", s),
        Value::BulkString(s) => format!("${}\r\n{}\r\n", s.len(), s),
+       Value::Null => String::from("$-1\r\n"),
        _ => panic!("Unsupported values for service")
      }   
   }

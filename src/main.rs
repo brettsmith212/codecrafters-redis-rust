@@ -40,12 +40,10 @@ async fn handle_conn(stream: TcpStream) {
                 "ping" | "PING" => Value::SimpleString("PONG".to_string()),
                 "echo" | "ECHO" => args.first().unwrap().clone(),
                 "get" | "GET" => {
-                    println!("redis state: {:?}", internal_state);
                     let key = unpack_bulk_str(args.first().unwrap()).unwrap();
-                    let v = format!("Data not available for key: {}", key);
-                    let default_value = RedisStoredValue::new(v, None);
-                    let stored_value = internal_state.get(&key).unwrap_or(&default_value);
-                    Value::SimpleString(stored_value.value().to_string())
+                    let default_value = Value::Null;
+                    let value = internal_state.get(&key).unwrap_or(default_value);
+                    value
                 }
                 "set" | "SET" => {
                   let output = handle_set(&args, &mut internal_state);
