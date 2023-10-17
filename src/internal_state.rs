@@ -53,6 +53,6 @@ impl RedisInternalState {
     pub fn set(&mut self, key: &str, value: &RedisStoredValue) -> Result<String, anyhow::Error> {
         self.key_value_store
             .insert(key.to_string(), value.clone()); 
-        Ok(String::from("ok"))
+        Ok(String::from("OK"))
     }
 }
